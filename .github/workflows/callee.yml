@@ -1,0 +1,37 @@
+name: callee-probe
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        required: true
+        type: string
+    secrets:
+      github-token:
+        required: true
+      canary:
+        required: false
+
+jobs:
+  release:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.merged && startsWith(github.event.pull_request.head.ref, 'release/'))
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: release report
+        env:
+          CANARY: ${{ secrets.canary }}
+          GH_INPUT: ${{ secrets.github-token }}
+        run: |
+          echo "callee_event=${{ github.event_name }} merged=${{ github.event.pull_request.merged }} ref=${{ github.event.pull_request.head.ref }} fork=${{ github.event.pull_request.head.repo.fork }}"
+          echo "callee_canary_set=$([ -n "$CANARY" ] && echo yes || echo no)"
+          echo "callee_gh_input_set=$([ -n "$GH_INPUT" ] && echo yes || echo no)"
+          echo "callee_oidc_url_set=$([ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && echo yes || echo no)"
+          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ]; then
+            code=$(curl -sS -o /tmp/oidc.json -w '%{http_code}' -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=probe" || true)
+            echo "callee_oidc_http=$code"
+          fi
+          code=$(curl -sS -o /tmp/w.json -w '%{http_code}' -X PUT -H "Authorization: bearer ${{ github.token }}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${{ github.repository }}/contents/callee-write.txt" -d '{"message":"probe","content":"cHJvYmU="}' || true)
+          echo "callee_token_write_http=$code"
