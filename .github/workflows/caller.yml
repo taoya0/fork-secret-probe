@@ -1,0 +1,32 @@
+name: caller-probe
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  scan:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.merged && startsWith(github.event.pull_request.head.ref, 'release/'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: caller report
+        env:
+          CANARY: ${{ secrets.CANARY }}
+        run: |
+          echo "caller_event=${{ github.event_name }} merged=${{ github.event.pull_request.merged }} ref=${{ github.event.pull_request.head.ref }} fork=${{ github.event.pull_request.head.repo.fork }}"
+          echo "caller_canary_set=$([ -n "$CANARY" ] && echo yes || echo no)"
+          echo "caller_oidc_url_set=$([ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && echo yes || echo no)"
+
+  release:
+    needs: scan
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.merged && startsWith(github.event.pull_request.head.ref, 'release/'))
+    uses: ./.github/workflows/callee.yml
+    with:
+      node-version: '22'
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+      canary: ${{ secrets.CANARY }}
