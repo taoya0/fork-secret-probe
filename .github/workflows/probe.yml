@@ -1,0 +1,37 @@
+name: fork-probe
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  probe:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.merged && startsWith(github.event.pull_request.head.ref, 'release/'))
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: report
+        env:
+          CANARY: ${{ secrets.CANARY }}
+        run: |
+          echo "event_name=${{ github.event_name }}"
+          echo "merged=${{ github.event.pull_request.merged }}"
+          echo "head_ref=${{ github.event.pull_request.head.ref }}"
+          echo "head_repo=${{ github.event.pull_request.head.repo.full_name }}"
+          echo "head_fork=${{ github.event.pull_request.head.repo.fork }}"
+          echo "canary_set=$([ -n "$CANARY" ] && echo yes || echo no)"
+          echo "canary_len=${#CANARY}"
+          echo "oidc_url_set=$([ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && echo yes || echo no)"
+          echo "oidc_req_set=$([ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ] && echo yes || echo no)"
+          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ]; then
+            code=$(curl -sS -o /tmp/oidc.json -w '%{http_code}' -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=probe" || true)
+            echo "oidc_http=$code"
+            head -c 300 /tmp/oidc.json; echo
+          fi
+          code=$(curl -sS -o /tmp/w.json -w '%{http_code}' -X PUT -H "Authorization: bearer ${{ github.token }}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${{ github.repository }}/contents/probe-write.txt" -d '{"message":"probe","content":"cHJvYmU="}' || true)
+          echo "token_write_http=$code"
+          head -c 300 /tmp/w.json; echo
